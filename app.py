@@ -22,6 +22,7 @@ from utils.uci_sankey import generate_uci_sankey
 from utils.uci_testing_pattern import (
     get_first_year_df, plot_histogram, plot_barplot, plot_violin, get_statistics_table
 )
+from utils.uci_relative_change_value_to_plotly import plot_relative_change_value
 from pyspark.sql import SparkSession
 
 # Configure logging
@@ -218,13 +219,13 @@ def main():
     # Main and sub-function buttons (styled as text)
     show_patient_journey = st.button("1. Patient Journey Sankey", key="btn_patient_journey", use_container_width=True)
     show_testing_pattern = st.button("2. Testing Pattern", key="btn_testing_pattern", use_container_width=True)
-    st.button("3. Relative Change Value", key="btn_relative_change", use_container_width=True)
-    st.button("Relative Change Value: Moderate Risk >253%", key="btn_moderate_253", use_container_width=True)
-    st.button("Relative Change Value: Low Risk >253%", key="btn_low_253", use_container_width=True)
-    st.button("4. Patient Progress", key="btn_patient_progress", use_container_width=True)
-    st.button("Patient Progress: High Risk", key="btn_high_risk", use_container_width=True)
-    st.button("Patient Progress: Moderate Risk", key="btn_moderate_risk", use_container_width=True)
-    st.button("Patient Progress: Low Risk", key="btn_low_risk", use_container_width=True)
+    show_relative_change = st.button("3. Relative Change Value", key="btn_relative_change", use_container_width=True)
+    show_moderate_253 = st.button("Relative Change Value: Moderate Risk >253%", key="btn_moderate_253", use_container_width=True)
+    show_low_253 = st.button("Relative Change Value: Low Risk >253%", key="btn_low_253", use_container_width=True)
+    show_patient_progress = st.button("4. Patient Progress", key="btn_patient_progress", use_container_width=True)
+    show_high_risk = st.button("Patient Progress: High Risk", key="btn_high_risk", use_container_width=True)
+    show_moderate_risk = st.button("Patient Progress: Moderate Risk", key="btn_moderate_risk", use_container_width=True)
+    show_low_risk = st.button("Patient Progress: Low Risk", key="btn_low_risk", use_container_width=True)
 
     with right_main:
         st.markdown('<div class="plot-container"><h3> Analysis Results</h3></div>', unsafe_allow_html=True)
@@ -272,9 +273,19 @@ def main():
             else:
                 st.warning("Please load data first before generating the Testing Pattern plots.")
         
-        # if show_relative_change_value:
-        #     st.markdown('<div class="plot-container"><h4>📊 Relative Change Value</h4></div>', unsafe_allow_html=True)
-        #     st.info("Relative Change Value plot will be displayed here")
+        if show_relative_change:
+            df = st.session_state.get('uci_df')
+            if df is not None and not df.empty:
+                # Use the same filtering as in your Sankey code
+                first_year_df = df[df['PROTOCOL_TESTING_MONTH'].notna()].copy()
+                with st.spinner("Generating relative change value plot..."):
+                    fig, summary_table = plot_relative_change_value(first_year_df)
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.markdown("### Relative Change Value Summary Table")
+                    st.dataframe(summary_table)
+            else:
+                st.warning("Please load data first before generating the Relative Change Value plot.")
         
         # if show_moderate_risk_253:
         #     st.markdown('<div class="plot-container"><h4> Moderate Risk >253%</h4></div>', unsafe_allow_html=True)
