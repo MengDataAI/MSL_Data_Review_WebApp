@@ -16,8 +16,13 @@ import logging
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 
 from data_fetcher import MSLDataFetcher
-from plot_generator import PlotGenerator
+#from plot_generator import PlotGenerator
 from config.settings import load_config
+from utils.uci_sankey import generate_uci_sankey
+from utils.uci_testing_pattern import (
+    get_first_year_df, plot_histogram, plot_barplot, plot_violin, get_statistics_table
+)
+from pyspark.sql import SparkSession
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -179,6 +184,13 @@ def main():
                 """,
                 unsafe_allow_html=True,
             )
+
+        # Use session state to store the result so it persists after rerun
+        if 'query_result_df' not in st.session_state:
+            st.session_state['query_result_df'] = None
+        if 'query_error' not in st.session_state:
+            st.session_state['query_error'] = None
+
         if load_data_clicked:
             # Parse patient IDs
             patient_ids = fetcher.parse_patient_ids(patient_ids_input)
@@ -192,88 +204,101 @@ def main():
                     if not df.empty:
                         st.success(f"Loaded {len(df)} records.")
                         st.dataframe(df)
+                        st.session_state['uci_df'] = df  # Store for later use
                     else:
                         st.warning("No data found for the given criteria.")
+                        st.session_state['uci_df'] = None
                 except Exception as e:
                     st.error(f"Error loading data: {e}")
-        
-        # Analysis Options
-        st.markdown('<div class="control-section"><h4> Analysis Options</h4></div>', unsafe_allow_html=True)
-        
-        # 1. Patient Journey Sankey
-        show_patient_journey = st.button("1. Patient Journey Sankey", key="btn_patient_journey", use_container_width=True)
-        
-        # 2. Testing Pattern
-        show_testing_pattern = st.button("2. Testing Pattern", key="btn_testing_pattern", use_container_width=True)
-        
-        # 3. Relative Change Value
-        show_relative_change_value = st.button("3. Relative Change Value", key="btn_relative_change", use_container_width=True)
-        show_moderate_risk_253 = st.button("Relative Change Value: Moderate Risk >253%", key="btn_moderate_253", use_container_width=True)
-        show_low_risk_253 = st.button("Relative Change Value: Low Risk >253%", key="btn_low_253", use_container_width=True)
-        
-        # 4. Patient Progress
-        show_patient_progress = st.button("4. Patient Progress", key="btn_patient_progress", use_container_width=True)
-        show_high_risk = st.button("Patient Progress: High Risk", key="btn_high_risk", use_container_width=True)
-        show_moderate_risk = st.button("Patient Progress: Moderate Risk", key="btn_moderate_risk", use_container_width=True)
-        show_low_risk = st.button("Patient Progress: Low Risk", key="btn_low_risk", use_container_width=True)
-        
-        # Add CSS for sub-function indentation
-        st.markdown("""
-        <style>
-        [data-testid="stButton"] button[key="btn_moderate_253"],
-        [data-testid="stButton"] button[key="btn_low_253"],
-        [data-testid="stButton"] button[key="btn_high_risk"],
-        [data-testid="stButton"] button[key="btn_moderate_risk"],
-        [data-testid="stButton"] button[key="btn_low_risk"] {
-            padding-left: 2rem !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        # Generate Plots Button removed
-    
+                    st.session_state['uci_df'] = None
+
+    # --- Restore Analysis Options section ---
+    st.subheader("Analysis Options")
+
+    # Main and sub-function buttons (styled as text)
+    show_patient_journey = st.button("1. Patient Journey Sankey", key="btn_patient_journey", use_container_width=True)
+    show_testing_pattern = st.button("2. Testing Pattern", key="btn_testing_pattern", use_container_width=True)
+    st.button("3. Relative Change Value", key="btn_relative_change", use_container_width=True)
+    st.button("Relative Change Value: Moderate Risk >253%", key="btn_moderate_253", use_container_width=True)
+    st.button("Relative Change Value: Low Risk >253%", key="btn_low_253", use_container_width=True)
+    st.button("4. Patient Progress", key="btn_patient_progress", use_container_width=True)
+    st.button("Patient Progress: High Risk", key="btn_high_risk", use_container_width=True)
+    st.button("Patient Progress: Moderate Risk", key="btn_moderate_risk", use_container_width=True)
+    st.button("Patient Progress: Low Risk", key="btn_low_risk", use_container_width=True)
+
     with right_main:
         st.markdown('<div class="plot-container"><h3> Analysis Results</h3></div>', unsafe_allow_html=True)
+        if st.session_state.get('query_error'):
+            st.error(f"Error loading data: {st.session_state['query_error']}")
+        elif st.session_state.get('query_result_df') is not None:
+            df = st.session_state['query_result_df']
+            if not df.empty:
+                st.success(f"Loaded {len(df)} records.")
+                st.dataframe(df)
+            else:
+                st.warning("No data found for the given criteria.")
+        else:
+            st.info("Use the left panel to configure your analysis and generate plots")
+            #pass
         
         # Display placeholder for plots
-        st.info("Use the left panel to configure your analysis and generate plots")
+        #st.info("Use the left panel to configure your analysis and generate plots")
         
         # Example of how plots will be displayed
         if show_patient_journey:
-            st.markdown('<div class="plot-container"><h4>🔄 Patient Journey Sankey</h4></div>', unsafe_allow_html=True)
-            st.info("Patient Journey Sankey plot will be displayed here")
+            df = st.session_state.get('uci_df')
+            if df is not None and not df.empty:
+                fig = generate_uci_sankey(df)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Please load data first before generating the Sankey plot.")
         
         if show_testing_pattern:
-            st.markdown('<div class="plot-container"><h4> Testing Pattern</h4></div>', unsafe_allow_html=True)
-            st.info("Testing Pattern plot will be displayed here")
+            df = st.session_state.get('uci_df')
+            if df is not None and not df.empty:
+                # Use the same filtering as in your Sankey code
+                first_year_df = df[df['PROTOCOL_TESTING_MONTH'].notna()].copy()
+                with st.spinner("Generating testing pattern plots..."):
+                    fig1 = plot_histogram(first_year_df)
+                    fig2 = plot_barplot(first_year_df)
+                    fig3 = plot_violin(first_year_df)
+                    stats_table = get_statistics_table(first_year_df)
+
+                    st.pyplot(fig1)
+                    st.pyplot(fig2)
+                    st.pyplot(fig3)
+                    st.markdown("### AlloSure Results Summary Table")
+                    st.dataframe(stats_table)
+            else:
+                st.warning("Please load data first before generating the Testing Pattern plots.")
         
-        if show_relative_change_value:
-            st.markdown('<div class="plot-container"><h4>📊 Relative Change Value</h4></div>', unsafe_allow_html=True)
-            st.info("Relative Change Value plot will be displayed here")
+        # if show_relative_change_value:
+        #     st.markdown('<div class="plot-container"><h4>📊 Relative Change Value</h4></div>', unsafe_allow_html=True)
+        #     st.info("Relative Change Value plot will be displayed here")
         
-        if show_moderate_risk_253:
-            st.markdown('<div class="plot-container"><h4> Moderate Risk >253%</h4></div>', unsafe_allow_html=True)
-            st.info("Moderate Risk >253% plot will be displayed here")
+        # if show_moderate_risk_253:
+        #     st.markdown('<div class="plot-container"><h4> Moderate Risk >253%</h4></div>', unsafe_allow_html=True)
+        #     st.info("Moderate Risk >253% plot will be displayed here")
         
-        if show_low_risk_253:
-            st.markdown('<div class="plot-container"><h4> Low Risk >253%</h4></div>', unsafe_allow_html=True)
-            st.info("Low Risk >253% plot will be displayed here")
+        # if show_low_risk_253:
+        #     st.markdown('<div class="plot-container"><h4> Low Risk >253%</h4></div>', unsafe_allow_html=True)
+        #     st.info("Low Risk >253% plot will be displayed here")
         
-        if show_patient_progress:
-            st.markdown('<div class="plot-container"><h4> Patient Progress</h4></div>', unsafe_allow_html=True)
-            st.info("Patient Progress plot will be displayed here")
+        # if show_patient_progress:
+        #     st.markdown('<div class="plot-container"><h4> Patient Progress</h4></div>', unsafe_allow_html=True)
+        #     st.info("Patient Progress plot will be displayed here")
         
-        if show_high_risk:
-            st.markdown('<div class="plot-container"><h4> High Risk Analysis</h4></div>', unsafe_allow_html=True)
-            st.info("High Risk Analysis plot will be displayed here")
+        # if show_high_risk:
+        #     st.markdown('<div class="plot-container"><h4> High Risk Analysis</h4></div>', unsafe_allow_html=True)
+        #     st.info("High Risk Analysis plot will be displayed here")
         
-        if show_moderate_risk:
-            st.markdown('<div class="plot-container"><h4>🟡 Moderate Risk Analysis</h4></div>', unsafe_allow_html=True)
-            st.info("Moderate Risk Analysis plot will be displayed here")
+        # if show_moderate_risk:
+        #     st.markdown('<div class="plot-container"><h4>🟡 Moderate Risk Analysis</h4></div>', unsafe_allow_html=True)
+        #     st.info("Moderate Risk Analysis plot will be displayed here")
         
-        if show_low_risk:
-            st.markdown('<div class="plot-container"><h4>🟢 Low Risk Analysis</h4></div>', unsafe_allow_html=True)
-            st.info("Low Risk Analysis plot will be displayed here")
+        # if show_low_risk:
+        #     st.markdown('<div class="plot-container"><h4>🟢 Low Risk Analysis</h4></div>', unsafe_allow_html=True)
+        #     st.info("Low Risk Analysis plot will be displayed here")
     
     # Footer
     st.markdown("---")

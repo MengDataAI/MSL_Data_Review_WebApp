@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Data fetcher utility for MSL Web Application
-Handles database connections and data retrieval
+Data fetcher utility for MSL Data Review Web Application
+Handles database connections, SQL generation, and data retrieval
 """
 
 import pandas as pd
