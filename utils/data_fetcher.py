@@ -5,42 +5,34 @@ Handles database connections and data retrieval
 """
 
 import pandas as pd
-import numpy as np
 from databricks import sql
-import os
 import logging
-from typing import List, Dict, Any, Optional
 import re
 
 logger = logging.getLogger(__name__)
 
 class MSLDataFetcher:
     """Data fetcher for MSL database operations"""
-    
+
     def __init__(self, config):
-        """Initialize data fetcher with configuration"""
         self.config = config
         self.connection = None
-        
+
     def connect(self):
         """Establish connection to Databricks"""
         try:
             if not self.config.DATABRICKS_TOKEN:
                 raise ValueError("DATABRICKS_TOKEN is required")
-            
             self.connection = sql.connect(
                 server_hostname=self.config.DATABRICKS_SERVER,
                 http_path=self.config.DATABRICKS_HTTP_PATH,
                 access_token=self.config.DATABRICKS_TOKEN
             )
-            
             logger.info("Successfully connected to Databricks")
-            return True
-            
         except Exception as e:
             logger.error(f"Failed to connect to Databricks: {str(e)}")
             raise
-    
+
     def disconnect(self):
         """Close database connection"""
         if self.connection:
@@ -51,257 +43,144 @@ class MSLDataFetcher:
                 logger.warning(f"Error closing connection: {e}")
             finally:
                 self.connection = None
-    
-    def validate_patient_ids(self, patient_ids: List[str]) -> List[str]:
-        """Validate and sanitize patient IDs"""
-        if not patient_ids:
-            return []
-        
-        # Remove duplicates and empty values
-        valid_ids = list(set([str(pid).strip() for pid in patient_ids if str(pid).strip()]))
-        
-        # Basic validation - allow alphanumeric, hyphens, underscores
+
+    def parse_patient_ids(self, patient_ids_raw):
+        """Parse and sanitize patient IDs from input string"""
+        # Split by comma, newline, or whitespace, remove empty, strip spaces
+        ids = re.split(r'[\s,]+', patient_ids_raw)
+        ids = [pid.strip() for pid in ids if pid.strip()]
+        # Remove duplicates and basic validation (alphanumeric, hyphen, underscore)
         pattern = re.compile(r'^[A-Za-z0-9_-]+$')
-        filtered_ids = [pid for pid in valid_ids if pattern.match(pid)]
-        
-        if len(filtered_ids) != len(valid_ids):
-            logger.warning(f"Filtered out {len(valid_ids) - len(filtered_ids)} invalid patient IDs")
-        
-        return filtered_ids
-    
-    def fetch_patient_data(self, patient_ids: List[str]) -> pd.DataFrame:
-        """Fetch patient data from MSL table"""
+        ids = list({pid for pid in ids if pattern.match(pid)})
+        return ids
+
+    def fetch_custom_patient_data(self, patient_ids, start_date, end_date):
+        """Generate and run the custom SQL query"""
+        if not patient_ids:
+            logger.warning("No valid patient IDs provided")
+            return pd.DataFrame()
+
+        # Format patient IDs for SQL array
+        patient_id_list = ',\n            '.join([f"'{pid}'" for pid in patient_ids])
+
+        # Build SQL query
+        sql_query = f"""
+WITH cte AS (
+  SELECT
+    DISTINCT LEFT(sf_center_account_code, 4) AS ACCOUNT_CODE,
+    transplant_center AS TRANSPLANT_CENTER,
+    accessionid AS ACCESSIONID,
+    patientid AS PID,
+    SEX,
+    tx_date_updated AS TRANSPLANT_DATE,
+    BIRTHDATE,
+    DATEDIFF(current_date(), tx_date_updated) AS TIME_FROM_TRANSPLANT,
+    DATEDIFF(tx_date_updated, BIRTHDATE) AS TRANSPLANT_AGE_IN_DAYS,
+    ROUND(DATEDIFF(tx_date_updated, BIRTHDATE)/365.25) AS TRANSPLANT_AGE,
+    DATEDIFF(COALESCE(draw_date, res_last_release_date), tx_date_updated) AS RESULT_POST_TRANSPLANT,
+    prescriber_name AS PRESCRIBER_NAME,
+    draw_date AS DRAW_DATE,
+    trf_study as TRF_STUDY_TYPE,
+    trf_received_date AS DATE_RECEIVED,
+    transplanted_organ AS ORGAN,
+    donortype AS DONOR_TYPE,
+    donor_relation AS DONOR_RELATION,
+    product_type AS PRODUCT_TYPE,
+    res_init_release_date AS RES_INIT_RELEASE_DATE,
+    res_last_release_date AS RES_FINAL_RELEASE_DATE,
+    res_result AS RES_RESULT_STRING,
+    COALESCE(draw_date, res_last_release_date) AS DATE_FILTER,
+    (
+      CASE
+        WHEN res_result LIKE '<%' THEN CAST(regexp_replace(res_result, '[<%]', '') AS DOUBLE) - 0.01 
+        WHEN res_result LIKE '>%' THEN CAST(regexp_replace(res_result, '[>%]', '') AS DOUBLE) + 0.01 
+        ELSE CAST(regexp_replace(res_result, '%', '') AS DOUBLE)
+      END
+    ) AS RES_RESULT_NUMERIC,
+    CASE
+      WHEN array_contains(
+        array(
+            {patient_id_list}
+        ),
+        patientid
+      ) THEN 'Y'
+      ELSE 'N'
+    END AS ON_PROTOCOL
+  FROM
+    production.data_engineering.nglims_all_tests_updated
+  WHERE
+    res_result NOT IN ('Unacceptable Sample', 'No Result', 'Not Detected')
+    AND res_result IS NOT NULL
+  ORDER BY
+    PID,
+    RESULT_POST_TRANSPLANT
+)
+SELECT
+  ACCOUNT_CODE,
+  TRANSPLANT_CENTER,
+  ACCESSIONID,
+  PID,
+  SEX,
+  TRANSPLANT_DATE,
+  BIRTHDATE,
+  TIME_FROM_TRANSPLANT,
+  TRANSPLANT_AGE_IN_DAYS,
+  TRANSPLANT_AGE,
+  RESULT_POST_TRANSPLANT,
+  PRESCRIBER_NAME,
+  DRAW_DATE,
+  TRF_STUDY_TYPE,
+  DATE_RECEIVED,
+  ORGAN,
+  DONOR_TYPE,
+  DONOR_RELATION,
+  PRODUCT_TYPE,
+  RES_INIT_RELEASE_DATE,
+  RES_FINAL_RELEASE_DATE,
+  DATE_FILTER,
+  RES_RESULT_STRING,
+  RES_RESULT_NUMERIC,
+  ON_PROTOCOL,
+  (
+    CASE
+      WHEN RES_RESULT_NUMERIC >= 1.0 THEN 'HR'
+      WHEN (RES_RESULT_NUMERIC < 1.0 AND RES_RESULT_NUMERIC >= 0.5) THEN 'MR'
+      WHEN RES_RESULT_NUMERIC < 0.5 THEN 'LR'
+      ELSE NULL
+    END
+  ) AS RISK_LEVEL,
+  (
+    CASE
+      WHEN RESULT_POST_TRANSPLANT < 46 AND RESULT_POST_TRANSPLANT > 0 THEN 'M1'
+      WHEN RESULT_POST_TRANSPLANT >= 46 AND RESULT_POST_TRANSPLANT < 76 THEN 'M2'
+      WHEN RESULT_POST_TRANSPLANT >= 76 AND RESULT_POST_TRANSPLANT < 107 THEN 'M3'
+      WHEN RESULT_POST_TRANSPLANT >= 107 AND RESULT_POST_TRANSPLANT < 153 THEN 'M4'
+      WHEN RESULT_POST_TRANSPLANT >= 153 AND RESULT_POST_TRANSPLANT < 230 THEN 'M6'
+      WHEN RESULT_POST_TRANSPLANT >= 230 AND RESULT_POST_TRANSPLANT < 320 THEN 'M9'
+      WHEN RESULT_POST_TRANSPLANT >= 320 AND RESULT_POST_TRANSPLANT < 395 THEN 'M12'
+      ELSE NULL
+    END
+  ) AS PROTOCOL_TESTING_MONTH
+FROM
+  cte
+WHERE ON_PROTOCOL = 'Y'
+AND DATE_FILTER BETWEEN '{start_date}' AND '{end_date}';
+"""
+        # Connect and run
         try:
-            # Validate patient IDs
-            valid_ids = self.validate_patient_ids(patient_ids)
-            if not valid_ids:
-                logger.warning("No valid patient IDs provided")
-                return pd.DataFrame()
-            
-            # Connect to database
             if not self.connection:
                 self.connect()
-            
-            # Build safe query
-            placeholders = ', '.join(['%s'] * len(valid_ids))
-            query = f"""
-                SELECT *
-                FROM {self.config.MSL_TABLE}
-                WHERE patient_id IN ({placeholders})
-                ORDER BY patient_id, date
-            """
-            
-            logger.info(f"Fetching data for {len(valid_ids)} patients")
-            
-            # Execute query
             with self.connection.cursor() as cursor:
-                cursor.execute(query, valid_ids)
+                cursor.execute(sql_query)
                 result = cursor.fetchall()
-                
                 if not result:
-                    logger.warning("No data found for the provided patient IDs")
+                    logger.warning("No data found for the provided query")
                     return pd.DataFrame()
-                
-                # Get column names
-                columns = [col[0] for col in cursor.description]
-                
-                # Create DataFrame
-                df = pd.DataFrame(result, columns=columns)
-                
-                logger.info(f"Retrieved {len(df)} records for {len(valid_ids)} patients")
-                return df
-                
-        except Exception as e:
-            logger.error(f"Error fetching patient data: {str(e)}")
-            raise
-        finally:
-            self.disconnect()
-    
-    def fetch_patient_demographics(self, patient_ids: List[str]) -> pd.DataFrame:
-        """Fetch patient demographics data"""
-        try:
-            valid_ids = self.validate_patient_ids(patient_ids)
-            if not valid_ids:
-                return pd.DataFrame()
-            
-            if not self.connection:
-                self.connect()
-            
-            placeholders = ', '.join(['%s'] * len(valid_ids))
-            query = f"""
-                SELECT DISTINCT 
-                    patient_id,
-                    age,
-                    gender,
-                    race,
-                    ethnicity,
-                    diagnosis_date,
-                    transplant_date
-                FROM {self.config.MSL_TABLE}
-                WHERE patient_id IN ({placeholders})
-                ORDER BY patient_id
-            """
-            
-            with self.connection.cursor() as cursor:
-                cursor.execute(query, valid_ids)
-                result = cursor.fetchall()
-                
-                if not result:
-                    return pd.DataFrame()
-                
-                columns = ['patient_id', 'age', 'gender', 'race', 'ethnicity', 'diagnosis_date', 'transplant_date']
-                df = pd.DataFrame(result, columns=columns)
-                
-                return df
-                
-        except Exception as e:
-            logger.error(f"Error fetching demographics: {str(e)}")
-            raise
-        finally:
-            self.disconnect()
-    
-    def fetch_lab_results(self, patient_ids: List[str]) -> pd.DataFrame:
-        """Fetch laboratory results data"""
-        try:
-            valid_ids = self.validate_patient_ids(patient_ids)
-            if not valid_ids:
-                return pd.DataFrame()
-            
-            if not self.connection:
-                self.connect()
-            
-            placeholders = ', '.join(['%s'] * len(valid_ids))
-            query = f"""
-                SELECT 
-                    patient_id,
-                    test_date,
-                    test_name,
-                    test_value,
-                    test_unit,
-                    reference_range,
-                    abnormal_flag
-                FROM {self.config.MSL_TABLE}
-                WHERE patient_id IN ({placeholders})
-                AND test_name IS NOT NULL
-                ORDER BY patient_id, test_date, test_name
-            """
-            
-            with self.connection.cursor() as cursor:
-                cursor.execute(query, valid_ids)
-                result = cursor.fetchall()
-                
-                if not result:
-                    return pd.DataFrame()
-                
-                columns = ['patient_id', 'test_date', 'test_name', 'test_value', 'test_unit', 'reference_range', 'abnormal_flag']
-                df = pd.DataFrame(result, columns=columns)
-                
-                return df
-                
-        except Exception as e:
-            logger.error(f"Error fetching lab results: {str(e)}")
-            raise
-        finally:
-            self.disconnect()
-    
-    def fetch_treatment_history(self, patient_ids: List[str]) -> pd.DataFrame:
-        """Fetch treatment history data"""
-        try:
-            valid_ids = self.validate_patient_ids(patient_ids)
-            if not valid_ids:
-                return pd.DataFrame()
-            
-            if not self.connection:
-                self.connect()
-            
-            placeholders = ', '.join(['%s'] * len(valid_ids))
-            query = f"""
-                SELECT 
-                    patient_id,
-                    treatment_date,
-                    treatment_type,
-                    medication_name,
-                    dosage,
-                    frequency,
-                    duration,
-                    response
-                FROM {self.config.MSL_TABLE}
-                WHERE patient_id IN ({placeholders})
-                AND treatment_type IS NOT NULL
-                ORDER BY patient_id, treatment_date
-            """
-            
-            with self.connection.cursor() as cursor:
-                cursor.execute(query, valid_ids)
-                result = cursor.fetchall()
-                
-                if not result:
-                    return pd.DataFrame()
-                
-                columns = ['patient_id', 'treatment_date', 'treatment_type', 'medication_name', 'dosage', 'frequency', 'duration', 'response']
-                df = pd.DataFrame(result, columns=columns)
-                
-                return df
-                
-        except Exception as e:
-            logger.error(f"Error fetching treatment history: {str(e)}")
-            raise
-        finally:
-            self.disconnect()
-    
-    def get_table_schema(self) -> Dict[str, Any]:
-        """Get table schema information"""
-        try:
-            if not self.connection:
-                self.connect()
-            
-            query = f"DESCRIBE {self.config.MSL_TABLE}"
-            
-            with self.connection.cursor() as cursor:
-                cursor.execute(query)
-                result = cursor.fetchall()
-                
-                schema = {}
-                for row in result:
-                    if len(row) >= 2:
-                        column_name = row[0]
-                        data_type = row[1]
-                        schema[column_name] = data_type
-                
-                return schema
-                
-        except Exception as e:
-            logger.error(f"Error getting table schema: {str(e)}")
-            raise
-        finally:
-            self.disconnect()
-    
-    def get_sample_data(self, limit: int = 5) -> pd.DataFrame:
-        """Get sample data for testing"""
-        try:
-            if not self.connection:
-                self.connect()
-            
-            query = f"""
-                SELECT *
-                FROM {self.config.MSL_TABLE}
-                LIMIT {limit}
-            """
-            
-            with self.connection.cursor() as cursor:
-                cursor.execute(query)
-                result = cursor.fetchall()
-                
-                if not result:
-                    return pd.DataFrame()
-                
                 columns = [col[0] for col in cursor.description]
                 df = pd.DataFrame(result, columns=columns)
-                
                 return df
-                
         except Exception as e:
-            logger.error(f"Error getting sample data: {str(e)}")
+            logger.error(f"Error running custom patient data query: {str(e)}")
             raise
         finally:
             self.disconnect() 

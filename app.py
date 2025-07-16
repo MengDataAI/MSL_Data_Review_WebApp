@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # Page configuration
 st.set_page_config(
     page_title="MSL Data Review",
-    page_icon="🏥",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -55,6 +55,72 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         margin-bottom: 1rem;
     }
+    /* Style buttons to look like text - remove borders and left align */
+    .stButton > button {
+        background: none !important;
+        border: none !important;
+        color: #333;
+        text-align: left !important;
+        padding: 0.5rem 0;
+        font-weight: normal;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        width: 100%;
+        margin: 0;
+        justify-content: flex-start !important;
+        display: flex !important;
+    }
+    .stButton > button:hover {
+        background: #f0f0f0 !important;
+        color: #007bff;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    .stButton > button:focus {
+        border: none !important;
+        box-shadow: none !important;
+    }
+    /* Style for section headers */
+    .analysis-section-header {
+        font-weight: bold;
+        color: #007bff;
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+        font-size: 0.9rem;
+    }
+    /* Ensure button content is left-aligned */
+    .stButton > button > div {
+        text-align: left !important;
+        width: 100%;
+    }
+    /* Hierarchical indentation for sub-functions */
+    .stButton > button[key="btn_moderate_253"],
+    .stButton > button[key="btn_low_253"],
+    .stButton > button[key="btn_high_risk"],
+    .stButton > button[key="btn_moderate_risk"],
+    .stButton > button[key="btn_low_risk"] {
+        margin-left: 2rem !important;
+        border-left: 3px solid #007bff !important;
+        padding-left: 1rem !important;
+    }
+    .load-data-btn button {
+        background: linear-gradient(90deg, #ff3b3b 0%, #ff7b7b 100%) !important; /* Red gradient */
+        color: #fff !important;
+        font-weight: bold !important;
+        font-size: 1.3rem !important;   /* Bigger font */
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 0.9rem 0 !important;   /* Slightly more padding for bigger button */
+        margin-top: 1rem !important;
+        margin-bottom: 1rem !important;
+        box-shadow: 0 2px 8px rgba(255,59,59,0.15) !important;
+        transition: background 0.3s;
+        letter-spacing: 0.5px;
+    }
+    .load-data-btn button:hover {
+        background: linear-gradient(90deg, #b30000 0%, #ff3b3b 100%) !important;
+        color: #fff !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -68,55 +134,106 @@ def main():
     left_panel, right_main = st.columns([1, 2])
     
     with left_panel:
-        st.markdown('<div class="control-section"><h3>📋 Control Panel</h3></div>', unsafe_allow_html=True)
-        
-        # Time Window Controls
-        st.markdown('<div class="control-section"><h4>⏰ Time Window</h4></div>', unsafe_allow_html=True)
-        time_start = st.date_input("Time Window Startpoint", value=datetime.now() - timedelta(days=30))
-        time_end = st.date_input("Time Window Endpoint", value=datetime.now())
+        # Analysis Window Controls
+        st.markdown('<div class="control-section"><h4>Analysis Window</h4></div>', unsafe_allow_html=True)
+        time_start = st.date_input("Analysis Window Startpoint", value=datetime.now() - timedelta(days=30))
+        time_end = st.date_input("Analysis Window Endpoint", value=datetime.now())
         
         # Patient IDs Input
-        st.markdown('<div class="control-section"><h4>👤 Patient IDs</h4></div>', unsafe_allow_html=True)
+        st.markdown('<div class="control-section"><h4> Patient IDs</h4></div>', unsafe_allow_html=True)
         patient_ids_input = st.text_area(
-            "Input Box for Patient IDs",
+            "Input Patient IDs",
             height=100,
             placeholder="Enter patient IDs (one per line or comma-separated)\nExample:\nPAT001\nPAT002\nPAT003"
         )
         
-        # File upload option
-        uploaded_file = st.file_uploader(
-            "Or Upload Patient IDs File",
-            type=['csv', 'txt', 'xlsx'],
-            help="Upload a file containing patient IDs"
-        )
-        
         # Load Data Button
-        if st.button("🔄 Load Data", type="primary", use_container_width=True):
-            st.info("Data loading functionality will be implemented here")
+        with st.container():
+            load_data_clicked = st.button("Load Data", key="load_data_btn", use_container_width=True)
+            st.markdown(
+                """
+                <style>
+                div[data-testid="stButton"][key="load_data_btn"] > button {
+                    background: linear-gradient(90deg, #ff3b3b 0%, #ff7b7b 100%) !important;
+                    color: #fff !important;
+                    font-weight: 900 !important;
+                    font-size: 1.5rem !important;
+                    border: none !important;
+                    border-radius: 12px !important;
+                    padding: 1.1rem 0 !important;
+                    margin-top: 1rem !important;
+                    margin-bottom: 1.5rem !important;
+                    box-shadow: 0 4px 16px rgba(255,59,59,0.18) !important;
+                    transition: background 0.3s, box-shadow 0.3s;
+                    letter-spacing: 1px;
+                    text-transform: uppercase;
+                    outline: none !important;
+                }
+                div[data-testid="stButton"][key="load_data_btn"] > button:hover {
+                    background: linear-gradient(90deg, #b30000 0%, #ff3b3b 100%) !important;
+                    color: #fff !important;
+                    box-shadow: 0 6px 24px rgba(255,59,59,0.28) !important;
+                    outline: none !important;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+        if load_data_clicked:
+            # Parse patient IDs
+            patient_ids = fetcher.parse_patient_ids(patient_ids_input)
+            # Format dates
+            start_date = time_start.strftime("%Y-%m-%d")
+            end_date = time_end.strftime("%Y-%m-%d")
+            # Fetch data
+            with st.spinner("Loading data..."):
+                try:
+                    df = fetcher.fetch_custom_patient_data(patient_ids, start_date, end_date)
+                    if not df.empty:
+                        st.success(f"Loaded {len(df)} records.")
+                        st.dataframe(df)
+                    else:
+                        st.warning("No data found for the given criteria.")
+                except Exception as e:
+                    st.error(f"Error loading data: {e}")
         
         # Analysis Options
-        st.markdown('<div class="control-section"><h4>📊 Analysis Options</h4></div>', unsafe_allow_html=True)
+        st.markdown('<div class="control-section"><h4> Analysis Options</h4></div>', unsafe_allow_html=True)
         
-        # Checkboxes for different plots
-        show_patient_journey = st.checkbox("Patient Journey Sankey")
-        show_testing_pattern = st.checkbox("Testing Pattern")
-        show_patient_progress = st.checkbox("Patient Progress")
-        show_high_risk = st.checkbox("High Risk")
-        show_moderate_risk = st.checkbox("Moderate Risk")
-        show_low_risk = st.checkbox("Low Risk")
+        # 1. Patient Journey Sankey
+        show_patient_journey = st.button("1. Patient Journey Sankey", key="btn_patient_journey", use_container_width=True)
         
-        # Risk thresholds
-        st.markdown('<div class="control-section"><h4>⚖️ Risk Thresholds</h4></div>', unsafe_allow_html=True)
-        relative_change_value = st.number_input("Relative Change Value", value=0.0, step=0.1)
-        moderate_risk_threshold = st.number_input("Moderate Risk >253%", value=253.0, step=0.1)
-        low_risk_threshold = st.number_input("Low Risk >253%", value=253.0, step=0.1)
+        # 2. Testing Pattern
+        show_testing_pattern = st.button("2. Testing Pattern", key="btn_testing_pattern", use_container_width=True)
         
-        # Generate Plots Button
-        if st.button("📈 Generate Plots", type="secondary", use_container_width=True):
-            st.info("Plot generation functionality will be implemented here")
+        # 3. Relative Change Value
+        show_relative_change_value = st.button("3. Relative Change Value", key="btn_relative_change", use_container_width=True)
+        show_moderate_risk_253 = st.button("Relative Change Value: Moderate Risk >253%", key="btn_moderate_253", use_container_width=True)
+        show_low_risk_253 = st.button("Relative Change Value: Low Risk >253%", key="btn_low_253", use_container_width=True)
+        
+        # 4. Patient Progress
+        show_patient_progress = st.button("4. Patient Progress", key="btn_patient_progress", use_container_width=True)
+        show_high_risk = st.button("Patient Progress: High Risk", key="btn_high_risk", use_container_width=True)
+        show_moderate_risk = st.button("Patient Progress: Moderate Risk", key="btn_moderate_risk", use_container_width=True)
+        show_low_risk = st.button("Patient Progress: Low Risk", key="btn_low_risk", use_container_width=True)
+        
+        # Add CSS for sub-function indentation
+        st.markdown("""
+        <style>
+        [data-testid="stButton"] button[key="btn_moderate_253"],
+        [data-testid="stButton"] button[key="btn_low_253"],
+        [data-testid="stButton"] button[key="btn_high_risk"],
+        [data-testid="stButton"] button[key="btn_moderate_risk"],
+        [data-testid="stButton"] button[key="btn_low_risk"] {
+            padding-left: 2rem !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Generate Plots Button removed
     
     with right_main:
-        st.markdown('<div class="plot-container"><h3>📊 Analysis Results</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div class="plot-container"><h3> Analysis Results</h3></div>', unsafe_allow_html=True)
         
         # Display placeholder for plots
         st.info("Use the left panel to configure your analysis and generate plots")
@@ -127,15 +244,27 @@ def main():
             st.info("Patient Journey Sankey plot will be displayed here")
         
         if show_testing_pattern:
-            st.markdown('<div class="plot-container"><h4>📈 Testing Pattern</h4></div>', unsafe_allow_html=True)
+            st.markdown('<div class="plot-container"><h4> Testing Pattern</h4></div>', unsafe_allow_html=True)
             st.info("Testing Pattern plot will be displayed here")
         
+        if show_relative_change_value:
+            st.markdown('<div class="plot-container"><h4>📊 Relative Change Value</h4></div>', unsafe_allow_html=True)
+            st.info("Relative Change Value plot will be displayed here")
+        
+        if show_moderate_risk_253:
+            st.markdown('<div class="plot-container"><h4> Moderate Risk >253%</h4></div>', unsafe_allow_html=True)
+            st.info("Moderate Risk >253% plot will be displayed here")
+        
+        if show_low_risk_253:
+            st.markdown('<div class="plot-container"><h4> Low Risk >253%</h4></div>', unsafe_allow_html=True)
+            st.info("Low Risk >253% plot will be displayed here")
+        
         if show_patient_progress:
-            st.markdown('<div class="plot-container"><h4>�� Patient Progress</h4></div>', unsafe_allow_html=True)
+            st.markdown('<div class="plot-container"><h4> Patient Progress</h4></div>', unsafe_allow_html=True)
             st.info("Patient Progress plot will be displayed here")
         
         if show_high_risk:
-            st.markdown('<div class="plot-container"><h4>🔴 High Risk Analysis</h4></div>', unsafe_allow_html=True)
+            st.markdown('<div class="plot-container"><h4> High Risk Analysis</h4></div>', unsafe_allow_html=True)
             st.info("High Risk Analysis plot will be displayed here")
         
         if show_moderate_risk:
@@ -155,4 +284,6 @@ def main():
     )
 
 if __name__ == "__main__":
+    config = load_config()
+    fetcher = MSLDataFetcher(config)
     main() 
