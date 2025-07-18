@@ -206,16 +206,19 @@ def plot_moderate_risk_lines(first_year_df):
             line_width=0
         )
 
-    # Add horizontal reference lines with annotations
+    # Add horizontal reference lines with right-aligned annotations
     fig.add_hline(
         y=1,
         line_dash="dash",
         line_color="darkred",
         line_width=3,
         annotation_text="1% threshold",
-        annotation_position="top left",
+        annotation_position="top right",
         annotation_font_size=14,
-        annotation_font_color="darkred"
+        annotation_font_color="darkred",
+        annotation_bgcolor="rgba(255, 255, 255, 0.8)",
+        annotation_bordercolor="darkred",
+        annotation_borderwidth=1
     )
     
     fig.add_hline(
@@ -224,35 +227,36 @@ def plot_moderate_risk_lines(first_year_df):
         line_color="orange",
         line_width=3,
         annotation_text="0.5% threshold",
-        annotation_position="top left",
+        annotation_position="top right",
         annotation_font_size=14,
-        annotation_font_color="orange"
+        annotation_font_color="orange",
+        annotation_bgcolor="rgba(255, 255, 255, 0.8)",
+        annotation_bordercolor="orange",
+        annotation_borderwidth=1
     )
 
-    # Add summary statistics as annotations with better styling
+    # Add summary statistics as annotations with better styling (centered at top)
     fig.add_annotation(
-        x=0.99, y=0.95,
+        x=0.5, y=0.99,
         xref="paper", yref="paper",
         text=f"<b>Average Time to Elevated Result (STE): {mean_time_to_elevated_moderate:.0f} ({ste_time_to_elevated_moderate:.0f}) days</b>",
         showarrow=False,
         font=dict(size=14, color='black', family='Arial'),
-        align="right",
+        align="center",
         bgcolor="white",
-        bordercolor="black",
-        borderwidth=2,
+        borderwidth=0,
         borderpad=6
     )
     
     fig.add_annotation(
-        x=0.99, y=0.88,
+        x=0.5, y=0.88,
         xref="paper", yref="paper",
         text=f"<b>Median (IQR): {median_time_to_elevated_moderate:.0f} ({range_min_moderate:.0f} - {range_max_moderate:.0f}) days</b>",
         showarrow=False,
         font=dict(size=14, color='black', family='Arial'),
-        align="right",
+        align="center",
         bgcolor="white",
-        bordercolor="black",
-        borderwidth=2,
+        borderwidth=0,
         borderpad=6
     )
 
@@ -276,6 +280,7 @@ def plot_moderate_risk_lines(first_year_df):
             titlefont=dict(size=18)
         ),
         yaxis=dict(
+            range=[0, 3],
             showgrid=True,
             gridcolor='gainsboro',
             zeroline=False,
@@ -291,13 +296,14 @@ def plot_moderate_risk_lines(first_year_df):
         legend=dict(
             title='<b>Patient ID</b>',
             x=1.02,
-            y=1,
+            y=0.95,
             xanchor='left',
             yanchor='top',
-            font=dict(size=14, family='Arial'),
+            font=dict(size=12, family='Arial'),
             bordercolor='gray',
             borderwidth=1,
-            bgcolor='rgba(255,255,255,0.8)'
+            bgcolor='rgba(255,255,255,0.8)',
+            itemsizing='constant'
         ),
         width=1000,
         height=540,
