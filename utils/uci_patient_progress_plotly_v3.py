@@ -36,11 +36,11 @@ def plot_patient_progress_violion(first_year_df):
     # Filter for less than 16
     stacked_df = stacked_df[stacked_df['RES_RESULT_NUMERIC'] < 16]
 
-    # Colorblind-friendly palette
+    # Publication-quality colorblind-friendly palette (Nature/Science style)
     color_map = {
-        'Low Risk': 'rgb(94, 60, 153)',      # blue-purple
-        'Moderate Risk': 'rgb(230, 97, 1)',  # orange
-        'High Risk': 'rgb(60, 180, 75)'      # green
+        'Low Risk': '#2E8B57',        # Sea Green - represents safety/low risk
+        'Moderate Risk': '#FF8C00',   # Dark Orange - represents caution/moderate risk
+        'High Risk': '#DC143C'        # Crimson Red - represents danger/high risk
     }
     color_sequence = [color_map['Low Risk'], color_map['Moderate Risk'], color_map['High Risk']]
 
@@ -91,7 +91,7 @@ def plot_patient_progress_violion(first_year_df):
             text='<b>AlloSure Results Across Low/Moderate/High Risk Groups</b>',
             x=0.5,
             xanchor='center',
-            font=dict(size=22)
+            font=dict(size=22, family='Arial, sans-serif')
         ),
         xaxis_title='<b>Protocol Testing Month</b>',
         yaxis_title='<b>AlloSure (% dd-cfDNA)</b>',
@@ -100,8 +100,8 @@ def plot_patient_progress_violion(first_year_df):
             showline=True,
             linewidth=2,
             linecolor='gray',
-            tickfont=dict(size=16),
-            titlefont=dict(size=18)
+            tickfont=dict(size=16, family='Arial, sans-serif'),
+            title=dict(font=dict(size=18, family='Arial, sans-serif'))
         ),
         yaxis=dict(
             showgrid=True,
@@ -110,19 +110,22 @@ def plot_patient_progress_violion(first_year_df):
             showline=True,
             linewidth=2,
             linecolor='gray',
-            tickfont=dict(size=16),
-            titlefont=dict(size=18)
+            tickfont=dict(size=16, family='Arial, sans-serif'),
+            title=dict(font=dict(size=18, family='Arial, sans-serif'))
         ),
         plot_bgcolor='white',
         paper_bgcolor='white',
         showlegend=True,
         legend=dict(
-            title='<b>Risk Group</b>',
+            title=dict(
+                text='<b>Risk Group</b>',
+                font=dict(size=16, family='Arial, sans-serif')
+            ),
             x=1.02,
             y=1,
             xanchor='left',
             yanchor='top',
-            font=dict(size=16, family='Arial'),
+            font=dict(size=16, family='Arial, sans-serif'),
             bordercolor='gray',
             borderwidth=1,
             bgcolor='rgba(255,255,255,0.8)'
@@ -140,9 +143,8 @@ def plot_patient_progress_violion(first_year_df):
     fig.update_traces(
         box_visible=True,
         meanline_visible=True,
-        line_color='black',
         line_width=2,
-        opacity=0.7,
+        opacity=0.8,
         points=False,
         meanline=dict(color='black', width=3),
         marker=dict(size=8)
