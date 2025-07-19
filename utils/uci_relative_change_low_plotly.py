@@ -74,15 +74,15 @@ def plot_low_risk_253(first_year_df):
                          '<extra></extra>'
         ))
 
-    # Add subtle alternating background shading for publication style
+    # Add alternating background shading for publication style
     intervals = [(0,46), (46, 76), (76, 107), (107, 153), (153, 230), (230, 320), (320, 395)]
     
     for i, (start, end) in enumerate(intervals):
-        color = 'rgba(240, 240, 240, 0.3)' if i % 2 == 0 else 'rgba(255, 255, 255, 0.1)'
+        color = 'lightgray' if i % 2 == 0 else 'white'
         fig.add_vrect(
             x0=start, x1=end,
             fillcolor=color,
-            opacity=0.3,
+            opacity=0.4,
             layer="below",
             line_width=0
         )
@@ -149,7 +149,7 @@ def plot_low_risk_253(first_year_df):
             tickfont=dict(size=14),
             titlefont=dict(size=16)
         ),
-        plot_bgcolor='white',
+        plot_bgcolor='rgba(0,0,0,0)',  # Transparent to show shading
         paper_bgcolor='white',
         showlegend=True,
         legend=dict(

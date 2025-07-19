@@ -1,3 +1,4 @@
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -5,32 +6,32 @@ import plotly.express as px
 
 
 ##################################################################################################
-# the input is first_year_df dataframe, and the output is plotly line for moderate risk > 253% 
+# the input is first_year_df dataframe, and the output is plotly line for high risk > 253% 
 #
 ##################################################################################################
-def plot_moderate_risk_253(first_year_df):
+def plot_high_risk_253(first_year_df):
     # Sort by Patient ID and days post-transplant
     sorted_first_year_df = first_year_df.sort_values(['PID', 'RESULT_POST_TRANSPLANT']).copy()
     group_patients = sorted_first_year_df.groupby('PID')
     count = group_patients['RES_RESULT_NUMERIC'].transform('size')
     first_record = group_patients.transform('first')
 
-    # Create Moderate Risk df
-    # Filter for MR (initial result between 0.5% <= result < 1% ) with atleast 2 tests results
-    mask_mr = (count >= 2) & (first_record['RES_RESULT_NUMERIC'] < 1) & (first_record['RES_RESULT_NUMERIC'] >= 0.5)
-    moderate_risk_df = sorted_first_year_df[mask_mr].copy()
+    # Create High Risk df
+    # Filter for HR (initial result >= 1% ) with atleast 2 tests results
+    mask_hr = (count >= 2) & (first_record['RES_RESULT_NUMERIC'] >= 1)
+    high_risk_df = sorted_first_year_df[mask_hr].copy()
 
-    rcv_df_moderate = moderate_risk_df.copy()
-    rcv_df_moderate['TEST_NUMBER'] = rcv_df_moderate.groupby('PID').cumcount() + 1
+    rcv_df_high = high_risk_df.copy()
+    rcv_df_high['TEST_NUMBER'] = rcv_df_high.groupby('PID').cumcount() + 1
 
     # Calculate Relative Between Tests for Each Patient
-    rcv_df_moderate['RELATIVE_BETWEEN_TEST'] = round(rcv_df_moderate.groupby('PID')['RES_RESULT_NUMERIC'].pct_change()*100,1)
+    rcv_df_high['RELATIVE_BETWEEN_TEST'] = round(rcv_df_high.groupby('PID')['RES_RESULT_NUMERIC'].pct_change()*100,1)
 
     # Create RCV dataframe - exclude NA (first result)
-    rcv_plot_moderate = rcv_df_moderate.loc[rcv_df_moderate['RELATIVE_BETWEEN_TEST'].notna()].copy()
+    rcv_plot_high = rcv_df_high.loc[rcv_df_high['RELATIVE_BETWEEN_TEST'].notna()].copy()
 
     # Calculate the percent of RELATIVE_BETWEEN_TEST >=253, >=149, >=61 AND <149, <61
-    rcv_plot_moderate['RCV'] = rcv_plot_moderate['RELATIVE_BETWEEN_TEST'].apply(
+    rcv_plot_high['RCV'] = rcv_plot_high['RELATIVE_BETWEEN_TEST'].apply(
         lambda x: '≥253' if x >= 253 
         else ('≥149' if x >= 149 
               else ('≥61' if x >= 61 
@@ -38,10 +39,10 @@ def plot_moderate_risk_253(first_year_df):
     )
 
     # Create Dataframe for the Patients with change > 253%
-    high_change_patients_moderate = rcv_plot_moderate[rcv_plot_moderate['RELATIVE_BETWEEN_TEST'] > 253]['PID'].unique()
+    high_change_patients_high = rcv_plot_high[rcv_plot_high['RELATIVE_BETWEEN_TEST'] > 253]['PID'].unique()
 
     # Filter for Patients
-    high_change_patients_moderate_filtered_df = moderate_risk_df[moderate_risk_df['PID'].isin(high_change_patients_moderate)]
+    high_change_patients_high_filtered_df = high_risk_df[high_risk_df['PID'].isin(high_change_patients_high)]
 
     # Create Plotly figure
     fig = go.Figure()
@@ -49,8 +50,8 @@ def plot_moderate_risk_253(first_year_df):
     # Add line traces for each patient with publication-quality styling
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
     
-    for i, patient_id in enumerate(high_change_patients_moderate_filtered_df['PID'].unique()):
-        patient_data = high_change_patients_moderate_filtered_df[high_change_patients_moderate_filtered_df['PID'] == patient_id]
+    for i, patient_id in enumerate(high_change_patients_high_filtered_df['PID'].unique()):
+        patient_data = high_change_patients_high_filtered_df[high_change_patients_high_filtered_df['PID'] == patient_id]
         color = colors[i % len(colors)]
         
         fig.add_trace(go.Scatter(
@@ -89,35 +90,35 @@ def plot_moderate_risk_253(first_year_df):
     fig.add_hline(
         y=1,
         line_dash="dash",
-        line_color="rgb(214, 39, 40)",
+        line_color="darkred",
         line_width=3,
         annotation_text="1% Threshold",
         annotation_position="right",
         annotation_font_size=14,
-        annotation_font_color="rgb(214, 39, 40)",
+        annotation_font_color="darkred",
         annotation_bgcolor="rgba(255, 255, 255, 0.8)",
-        annotation_bordercolor="rgb(214, 39, 40)",
+        annotation_bordercolor="darkred",
         annotation_borderwidth=1
     )
     
     fig.add_hline(
         y=0.5,
         line_dash="dash",
-        line_color="rgb(230, 97, 1)",
+        line_color="orange",
         line_width=3,
         annotation_text="0.5% Threshold",
         annotation_position="right",
         annotation_font_size=14,
-        annotation_font_color="rgb(230, 97, 1)",
+        annotation_font_color="orange",
         annotation_bgcolor="rgba(255, 255, 255, 0.8)",
-        annotation_bordercolor="rgb(230, 97, 1)",
+        annotation_bordercolor="orange",
         annotation_borderwidth=1
     )
 
     # Update layout for publication-quality styling
     fig.update_layout(
         title=dict(
-            text='<b>Moderate Risk Patients with Sequential AlloSure Score RCV >253%</b>',
+            text='<b>High Risk Patients with Sequential AlloSure Score RCV >253%</b>',
             x=0.5,
             xanchor='center',
             font=dict(size=20)
@@ -136,6 +137,7 @@ def plot_moderate_risk_253(first_year_df):
             titlefont=dict(size=16)
         ),
         yaxis=dict(
+            range=[0, None],  # Start from 0, no upper limit
             showgrid=True,
             gridcolor='gainsboro',
             zeroline=False,
@@ -175,4 +177,5 @@ def plot_moderate_risk_253(first_year_df):
 
 
 # test
-plot_moderate_risk_253(first_year_df)
+plot_high_risk_253(first_year_df)
+
